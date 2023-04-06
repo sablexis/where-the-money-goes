@@ -1,0 +1,252 @@
+---
+title: "Where the Money Goes: A Tale of Two Programs at SEC Schools"
+author: "Sabrina Sandy"
+date: "Tuesday April 4th 2023"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+bibliography: Final_Proj_Bib.bib
+---
+
+
+### Datasets
+
+**EADA Data** the SEC basketball data I collected came from the Equity in Athletics Data Analysis (EADA) Cutting Tool from the Office of Postsecondary Education of the U.S. Department of Education. The tool provides the ability for users to select specific instituions and collect, revenue, spending, and participant data across a multitude of collegiate athletics. The data is drawn from the OPE Equity in Athletics Disclosure Website database. This database consists of athletics data that are submitted annually as required by the Equity in Athletics Disclosure Act (EADA), via a Web-based data collection, by all co-educational postsecondary institutions that receive Title IV funding and that have an intercollegiate athletics program.
+
+**Knight Commission Data** Syracuse University's Newhouse School of Public Commuications provides a College Athletics Database with an overview of Athletic and Academic finances from the Knight Commission. The data in this database is self-reported by institutions on NCAA financial reports and on the same such EADA data. I used this resource specifically to get a lower level look at football programs specifically.
+
+### Research Questions
+
+
+>  To what extent does academic funding affect universities' sports teams funding levels?
+
+>  How do changes in athletic recruitment fees at a specific college impact the revenue from athletic events?
+
+>  What is the difference in spending on facilities, coaching salaries, and other resources for women's basketball and SEC football at a particular college, and how has this impacted the success of each program?
+
+
+
+
+```{r message=FALSE}
+# installing packages needed for this project
+
+library(tidyr)
+library(tidyverse)
+library(ggplot2)
+library(gganimate)
+library(plotly)
+library(corrplot)
+library(RColorBrewer)
+
+```
+
+```{r message = FALSE}
+# read in both data sets
+
+#sec data from knight newhouse
+SEC_FB_df <- readxl::read_excel("datasets/Custom_Reporting_data_Sec_FB.xls")
+SEC_FB_df
+#equity in athletics data analysis
+
+Basketball_Data <- read_csv("datasets/Sport_Data_2016_2017_2018_2019.csv")
+Basketball_Data
+```
+
+#### To what extent do universities with higher funding levels for sports teams spend less on academic programs compared to universities with lower funding levels for sports teams?
+
+
+```{r fig.width=8, fig.height=8, fig.align='center'}
+
+# arrange by football spending so we can hone in on 3 institutions
+
+SEC_FB_df %>%
+  arrange(`Total Football Spending`)
+
+# select data
+
+SEC_v_students <- SEC_FB_df %>%
+                    filter(Data == "University of Missouri-Columbia" | 
+                           Data == "Louisiana State University and Agricultural & Mechanical College"|
+                           Data == "The University of Alabama") %>%
+                    select(Data, Year, `Total Football Spending`, `Total Academic Spending (University-Wide)`, `Ticket Sales`)
+
+
+# calculate totals so we can get percentages
+
+SEC_v_students$Total <- rowSums(SEC_v_students[, c("Total Football Spending", "Total Academic Spending (University-Wide)", "Ticket Sales")])
+
+
+# reshape data so we can create a grouped bar chart
+
+SEC_v_students_longer <- pivot_longer(SEC_v_students, cols = c(
+  `Total Football Spending`, `Total Academic Spending (University-Wide)`, `Ticket Sales`),
+  names_to = "Category", values_to = "Amount")
+
+
+# calculate percentages
+
+SEC_v_students_longer$Amount <- SEC_v_students_longer$Amount / SEC_v_students_longer$Total * 100
+
+
+sec_v_students_graphs <- SEC_v_students_longer %>%
+  ggplot(aes(x = Data, y = `Amount`, fill = `Category`)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_x_discrete(labels= c("LSU", "U Alabama", "Mizzou")) +
+  theme(axis.text.x = element_text(angle = 45, size = 6, vjust = 0.6),
+        legend.key.size = unit(0.5, 'cm')) +
+  theme_minimal() +
+  labs(title = "Do ticket sales change if you spend more on academics?", subtitle = 'Year: {closest_state}', x = 'University', y = 'Percentage')
+
+
+anim <- sec_v_students_graphs + transition_states(Year, transition_length = 2, state_length = 1) + 
+  enter_fade() + 
+  exit_shrink() +
+  ease_aes('sine-in-out')
+
+anim
+
+anim_save("output/sec_v_students_gganimate.gif")
+
+
+```
+
+
+>  The audience targeted for this animated ggplot is SEC students themselves. I initial aimed to convey that there was a disparity between academic spending and atheltics spending but I foolishly thought the athletic spending would be disproportionate when in reality it's pretty tame. So now it conveys that increased academic spending doesn't come at the detriment of athletics spending. So one can have their cake and eat it too. Again since I thought the data was going to look a certain way I wanted the grouped bar charts but I think the animation really aides in displaying the passage of time and the change in spending that comes with that.  
+
+
+
+#### How do changes in athletic recruitment fees at a specific college impact the revenue from athletic events?
+
+
+```{r fig.width=8, fig.height=8, fig.align='center'}
+
+# wrangling data
+
+LSU_data <- SEC_FB_df %>%
+                    filter(Data == "Louisiana State University and Agricultural & Mechanical College") %>%
+                    select(Data, Year, `Recruiting`, `Coaches Compensation`, `Ticket Sales`, `Corporate Sponsorship, Advertising, Licensing`, `NCAA/Conference Distributions, Media Rights, and Post-Season Football`)
+
+LSU_data$Total_Revenue <- rowSums(LSU_data[, c("Ticket Sales", "Corporate Sponsorship, Advertising, Licensing", "NCAA/Conference Distributions, Media Rights, and Post-Season Football")]) 
+
+# reshaping the data to group things again
+
+LSU_data_reshaped <- LSU_data %>%
+                      pivot_longer(
+                        cols = c("Ticket Sales", "NCAA/Conference Distributions, Media Rights, and Post-Season Football"),
+                        names_to = "Rev_Source",
+                        values_to = "Rev_Amount"
+                      )
+LSU_data_reshaped
+
+# create a scatter plot 
+LSU_plot <- LSU_data_reshaped %>%
+  ggplot(aes(x = Recruiting, y = Rev_Amount, group = Rev_Source, colour = Rev_Source)) + 
+    geom_line() +
+    scale_x_continuous(labels = scales::comma, 
+                     name = "Athletic Recruitment Fees (Millions)") +
+    scale_y_continuous(labels = scales::comma, 
+                     name = "Revenue (Millions)") +
+    scale_color_manual(values = c("#a08ec1","#c1a73b")) +
+    labs(title = "The Relationship Between Recruitment Fees and Athletic Event Revenue",
+         subtitle = "at Louisiana State University",
+         fill = "Rev_Source",
+         colour = "Revenue Source") +
+    scale_fill_discrete(labels=c('NCAA/Conference Distribution', 'Ticket Sales')) +
+    theme_light() +
+    theme(axis.text.x = element_text(angle = 45, size = 6, vjust = 0.6),aspect.ratio=1)
+    
+
+LSU_plot
+
+ggsave("output/LSU_plot.png")
+
+```
+
+
+>  The audience targeted for this plot is Athletic coordinators or whoever's incharge of doling out the funding for the athletic programs. I would assume that these kind of people enjoy straight to the point cut and dry graphs, with few variables. Also line graphs evoke a kind of financial feeling so that's why I decided to display this as such. As well as using the LSU tigers colours of purple and gold.
+
+
+
+#### What is the difference in spending on facilities, coaching salaries, and other resources for women's basketball and SEC football at a particular college, and how has this impacted the success of each program?
+
+```{r}
+Basketball_Data_F <- Basketball_Data %>%
+  select(matches("Women|Female|Survey|Institution") & !matches("Coed")) %>%
+  filter(`Institution Name` == "Auburn University" |
+         `Institution Name` == "Louisiana State University and Agricultural & Mechanical College" |
+         `Institution Name` == "Mississippi State University" |
+         `Institution Name` == "Texas A & M University" |
+         `Institution Name` == "The University of Alabama" |
+         `Institution Name` == "The University of Tennessee" |
+         `Institution Name` == "University of Arkansas" |
+         `Institution Name` == "University of Florida" |
+         `Institution Name` == "University of Georgia" |
+         `Institution Name` == "University of Kentucky" ) %>%
+  rename(Year = `Survey Year`, Data = `Institution Name`)
+
+SEC_FB_df$Total_Revenue <- rowSums(SEC_FB_df[, c("Ticket Sales", "Corporate Sponsorship, Advertising, Licensing", "NCAA/Conference Distributions, Media Rights, and Post-Season Football")]) 
+
+
+Basketball_v_Football <- Basketball_Data_F %>%
+              left_join(SEC_FB_df)
+
+
+B_v_F_wrangled <- Basketball_v_Football %>%
+  select(`Year`,
+         `Data`,
+         `Operating Expenses per Team/Women's Team`, 
+         `Revenues Women's Team`,
+         `Total Football Spending`,
+         `Total_Revenue`)
+  
+Basketball_v_Football_graph <- ggplot(B_v_F_wrangled, aes(x = `Operating Expenses per Team/Women's Team`, y = `Revenues Women's Team`, size = `Total Football Spending`, color = `Total_Revenue`)) +
+  geom_point(aes(alpha = 0.2)) +
+  scale_x_continuous(labels = scales::comma) +
+  scale_y_continuous(labels = scales::comma) +
+  scale_size_continuous(labels = scales::comma) +
+  scale_color_gradient(low = "#e2bf99", high = "#a5dab8", labels = scales::comma) +
+  labs(title = "Comparing Spending on Women's Basketball and Men's Football",
+       subtitle = "At SEC Conference Schools",
+       x = "Operating Expenses Women's Basketball Team (Millions)",
+       y = "Revenues Women's Baketball Team (Millions)",
+       size = "Total Football Spending",
+       color = "Total_Revenue") +
+  theme_classic()
+
+Basketball_v_Football_graph
+
+ggsave("output/Basketball_v_Football_graph.png")
+
+
+```
+
+
+>  The audience targeted for this plot is fans of NCAA womens basketball and womens atheltics as a whole. I aimed to convey that funding women's sports in the same way these large SEC schools fund their massive football programs is beneficial in terms of revenue. The bubble map is great for this because you can see multiple variables at a time and the information comes across really clearly. 
+
+
+### Conclusion
+
+I do feel like all three of my visualizations answered my research questions and were appropriate for the tasks and the audience. This data is source from a government act which adds to the validitity of it but since the data set was smallish (and in part because I still haven't entirely figured out how to display uncertainty in ggplot) I didn't do any error calculations which is a bad practice and is nearly like serving up misinformation! I did really want to use plotly for the revenue line graph but there's a bug with tooltips on linegraphs that made me pivot back to a static plot. I'm very happy with my work done here and I think with a cleaned, easy, already put together dataset I could've done far more exciting, aesthetic and insightful  things but I tried to challenge myself and came up short.
+
+### Bibliography
+
+<div id="refs"></div>
+
+[@tidyverse]
+
+[@plotly]
+
+[@ggplot2]
+
+[@colorbrewer]
+
+[@corrplot]
+
+[@gganimate]
+
+[@tidyr]
+
+Knight-Newhouse College Athletics Database, a joint project of the Knight Commission on Intercollegiate Athletics and the S.I. Newhouse School of Public Communications, Syracuse University.
+
+Equity in Athletics Disclosure Act of 1994. Pub. L. No. 103-382, 108 Stat. 3518 (codified as amended at 20 U.S.C. § 1092
